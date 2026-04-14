@@ -73,7 +73,7 @@ Reviews are written to a Pulse inbox directory as self-contained markdown files.
 **Target directory**, in priority order:
 
 1. `$PULSE_INBOX` environment variable, if set
-2. `../oneone/data/inbox/` relative to the current repo, if it exists
+2. `~/.pulse/data/inbox/` if it exists
 3. Otherwise the step is skipped silently
 
 **File naming**: `pr-<number>-<UTC-timestamp>.md` (timestamps prevent collisions on re-review).
@@ -83,8 +83,8 @@ Reviews are written to a Pulse inbox directory as self-contained markdown files.
 To enable:
 
 ```bash
-# Option A: inherit the sibling-dir default (nothing to do if ../oneone exists)
-mkdir -p ../oneone/data/inbox
+# Option A: use the default Pulse data dir
+mkdir -p ~/.pulse/data/inbox
 
 # Option B: point it somewhere else
 export PULSE_INBOX=/path/to/pulse/inbox
