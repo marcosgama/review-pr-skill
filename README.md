@@ -28,26 +28,35 @@ Reviewing only the diff misses cross-file context. This skill reads the full rep
 
 ## Installation
 
-Copy the skill files into your target repo:
+Claude Code discovers skills from a `SKILL.md` inside a named directory. Pick the scope that matches who should have the skill:
+
+| Scope | Path | Applies to |
+|-------|------|------------|
+| Project | `<repo>/.claude/skills/review-pr/` | Everyone who clones the repo (commit it) |
+| Personal | `~/.claude/skills/review-pr/` | You, across all your projects |
+
+Install as a **project** skill (recommended — the skill is repo-specific):
 
 ```bash
-# From your data pipeline repo root
+# From clever-datalake-workflows root
 mkdir -p .claude/skills/review-pr
-cp SKILL.md pipeline-layers.md bug-patterns.md .claude/skills/review-pr/
+cp /path/to/review-pr-skill/{SKILL.md,pipeline-layers.md,bug-patterns.md} .claude/skills/review-pr/
 ```
 
-Or clone directly into your repo's skills directory:
+Or clone directly into the skills directory:
 
 ```bash
-cd your-repo/.claude/skills
+cd clever-datalake-workflows/.claude/skills
 git clone https://github.com/marcosgama/review-pr-skill.git review-pr
 ```
+
+Claude Code live-reloads skill changes, so edits to these files take effect in the current session.
 
 ## Prerequisites
 
 - [Claude Code](https://claude.ai/code) CLI installed
 - `gh` CLI installed and authenticated (`gh auth status`)
-- Running from within a local clone of the target repo
+- Running from within a local clone of `clever-datalake-workflows`
 
 ## Usage
 

@@ -1,6 +1,7 @@
 ---
 name: review-pr
-description: Deep, repo-aware PR review for clever-datalake-workflows. Traces upstream sources, downstream consumers, cross-references schemas, and detects real bugs with code evidence. Use when reviewing PRs that touch dbt models, Glue jobs, Airflow DAGs, or pipeline DDL.
+description: Deep, repo-aware PR review for clever-datalake-workflows data pipelines. Traces upstream sources, downstream consumers, cross-references schemas, and detects bugs with code evidence. Use when reviewing PRs that touch dbt models, Glue jobs, Airflow DAGs, or pipeline DDL.
+when_to_use: Trigger when the user asks to review, audit, or check a PR in clever-datalake-workflows, or pastes a PR URL/number for review. Example phrases "review PR 280", "check this PR", "look at pull request <url>".
 argument-hint: <PR-URL-or-number>
 disable-model-invocation: true
 allowed-tools: Bash(gh *) Read Grep Glob
@@ -8,26 +9,50 @@ allowed-tools: Bash(gh *) Read Grep Glob
 
 # /review-pr — Deep Pipeline PR Review
 
-You are reviewing a pull request in the **clever-datalake-workflows** repository. This is a data pipeline repo using dbt (Athena/Trino SQL), Airflow DAGs, AWS Glue ETL jobs, and a layered architecture (landing → raw → base → staging → intermediate → refined → mart).
+You are reviewing a pull request in the **clever-datalake-workflows** repository: a data pipeline repo using dbt (Athena/Trino SQL), Airflow DAGs, AWS Glue ETL jobs, and a layered architecture (landing → raw → base → staging → intermediate → refined → mart).
 
 The PR to review is: `$ARGUMENTS`
 
+## Reference files
+
+Load these only when you reach the step that needs them — they are one level deep from this file.
+
+- [pipeline-layers.md](pipeline-layers.md) — classification rules for each file (Step 1.4)
+- [bug-patterns.md](bug-patterns.md) — bug pattern catalog to scan for (Step 5)
+
+## Review checklist
+
+Copy this checklist into your response before starting Step 1, and check off each item as you finish it. This keeps the review sequenced and nothing gets skipped.
+
+```
+Review Progress:
+- [ ] Pre-flight: gh auth OK, PR exists, has changed files
+- [ ] Step 1: Fetch PR, read every changed file in full, classify by layer
+- [ ] Step 2: Trace upstream — verify column consistency against sources
+- [ ] Step 3: Trace downstream — enumerate every ref() consumer
+- [ ] Step 4: Cross-reference snapshots, schema.yml, Glue, tests, DAGs
+- [ ] Step 5: Scan for bug patterns (bug-patterns.md)
+- [ ] Step 6: Assess PR description completeness
+- [ ] Output: Render the review in the format below
+- [ ] Step 7: Ask the user whether to post the review as a PR comment
+```
+
 ## Pre-Flight Checks
 
-Before starting the review, validate the environment:
+Validate the environment before doing anything else. If any check fails, stop and report the failure.
 
-1. **Verify gh is authenticated**: Run `gh auth status`. If it fails, tell the user to run `gh auth login` and stop.
-2. **Verify the PR exists**: Run `gh pr view $ARGUMENTS --json number,title,state`. If it fails, report that the PR URL or number is invalid and stop.
-3. **Check for changes**: Run `gh pr view $ARGUMENTS --json files`. If the PR has zero changed files, report "No code changes to review" and stop.
+1. `gh auth status` — if it fails, tell the user to run `gh auth login`.
+2. `gh pr view $ARGUMENTS --json number,title,state` — if it fails, the PR URL/number is invalid.
+3. `gh pr view $ARGUMENTS --json files` — if zero changed files, report "No code changes to review".
 
 ## Step 1: Fetch and Understand the PR
 
 Fetch PR metadata and read all changed files:
 
-1. Run `gh pr view $ARGUMENTS --json number,title,body,author,commits,files,additions,deletions,baseRefName,headRefName` to get the full PR context.
-2. Run `gh pr diff $ARGUMENTS` to get the complete diff.
-3. For **every** changed file, read the full file (not just the diff). Use the Read tool on each file path. This is critical — diff hunks miss surrounding context.
-4. Classify each file by pipeline layer using the rules in [pipeline-layers.md](pipeline-layers.md). Record the layer for each file.
+1. Run `gh pr view $ARGUMENTS --json number,title,body,author,commits,files,additions,deletions,baseRefName,headRefName`.
+2. Run `gh pr diff $ARGUMENTS` for the complete diff.
+3. For **every** changed file, read the full file with the Read tool. Diff hunks miss surrounding context.
+4. Classify each file using the rules in [pipeline-layers.md](pipeline-layers.md). Record the layer per file.
 5. Identify the change type for each file:
    - **Schema change**: Column additions, removals, renames, type changes
    - **New model**: File didn't exist before
@@ -57,12 +82,9 @@ For each changed dbt model (base, staging, intermediate, refined, mart):
 
 For each changed model, find every consumer:
 
-1. Extract the model name from the file name (e.g., `staging_orders.sql` → `staging_orders`)
-2. Grep the entire repo for `ref('model_name')` and `ref("model_name")`:
-   ```
-   grep -r "ref('staging_orders')" --include="*.sql" .
-   grep -r 'ref("staging_orders")' --include="*.sql" .
-   ```
+1. Extract the model name from the file name (e.g., `staging_orders.sql` → `staging_orders`).
+2. Use the Grep tool to find every consumer. Search both quote styles across `*.sql`:
+   - pattern `ref\(['"]staging_orders['"]\)` with `glob: "**/*.sql"`
 3. Read each downstream model in full.
 4. For each downstream consumer, check:
    - Does it reference any columns that were **removed** or **renamed** in this PR?
@@ -79,16 +101,16 @@ For each changed model, find every consumer:
 Check these cross-cutting concerns:
 
 ### Snapshot check_cols
-- Find any snapshots that reference changed models: grep for `ref('model_name')` in `**/snapshots/**/*.sql`
-- Read the snapshot config and extract `check_cols`
-- Verify every column in `check_cols` exists in the model's current output
-- If the PR renames or removes a column that's in `check_cols`, flag it as HIGH severity
+- Use Grep to find snapshots that reference changed models (`ref\(['"]model_name['"]\)` scoped to `**/snapshots/**/*.sql`).
+- Read the snapshot config and extract `check_cols`.
+- Verify every column in `check_cols` exists in the model's current output.
+- If the PR renames or removes a column that's in `check_cols`, flag it as HIGH severity.
 
 ### schema.yml / properties.yml
-- Find schema files for changed models: look for the model name in `**/*schema*.yml` or `**/*properties*.yml`
-- Compare documented column names against the model's actual SELECT output
-- Flag any columns documented but not in the model, or in the model but not documented
-- Check if dbt tests reference columns that no longer exist
+- Use Glob to find schema files for changed models (`**/*schema*.yml`, `**/*properties*.yml`).
+- Compare documented column names against the model's actual SELECT output.
+- Flag any columns documented but not in the model, or in the model but not documented.
+- Check if dbt tests reference columns that no longer exist.
 
 ### Glue job ↔ base model
 - If a Glue job changed, check the corresponding base model still matches
@@ -130,14 +152,16 @@ If the description is thorough, acknowledge it briefly. If it's missing critical
 
 ## Step 7: Post as PR Comment (Optional)
 
-After completing the review:
+After rendering the review in the terminal:
 
-1. Ask the user: "Would you like me to post this review as a PR comment?"
+1. Ask the user: "Post this review as a PR comment?"
 2. If yes:
-   - Write the review to a temporary file
-   - Run `gh pr comment $ARGUMENTS --body-file /tmp/review-comment.md`
-   - Report the comment URL
-3. If no: The review stays in the terminal only.
+   - Write the review to `/tmp/review-comment-$ARGUMENTS.md` (session-scoped path).
+   - Run `gh pr comment $ARGUMENTS --body-file /tmp/review-comment-$ARGUMENTS.md`.
+   - Report the returned comment URL.
+3. If no: stop — the review stays in the terminal only.
+
+Never post without explicit user confirmation — PR comments are visible to the whole team.
 
 ## Output Format
 

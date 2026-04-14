@@ -1,24 +1,34 @@
 # Bug Pattern Catalog
 
-Check every changed SQL/Python file for these patterns. For each match, report the exact file:line, the problematic code, why it's a problem, and a suggested fix.
+Check every changed SQL/Python file for these patterns. For each match, report the exact `file:line`, the problematic code, why it's a problem, and a suggested fix.
+
+## Contents
+
+1. [SQL function compatibility (Athena vs Trino)](#1-sql-function-compatibility-athena-vs-trino)
+2. [NULL handling gaps](#2-null-handling-gaps)
+3. [Position-dependent INSERT](#3-position-dependent-insert)
+4. [JSON extraction without type guards](#4-json-extraction-without-type-guards)
+5. [Schema mismatches between layers](#5-schema-mismatches-between-layers)
+6. [Snapshot check_cols mismatch](#6-snapshot-check_cols-mismatch)
+7. [Airflow DAG dependency misalignment](#7-airflow-dag-dependency-misalignment)
+8. [Glue field extraction drift](#8-glue-field-extraction-drift)
 
 ## 1. SQL Function Compatibility (Athena vs Trino)
 
 Athena v2 uses Presto syntax; Athena v3 / Trino has breaking changes.
 
-**Pattern**: Look for functions that differ between engines.
+**Red flags — functions that behave differently or only exist on one engine**:
 
-| Athena v2 (Presto) | Trino / Athena v3 | Fix |
-|---------------------|-------------------|-----|
-| `date_parse(x, fmt)` | `date_parse(x, fmt)` (same, but watch format codes) | Verify format string matches engine |
-| `from_unixtime(ts)` | `from_unixtime(ts)` | Check if return type changed (timestamp vs varchar) |
-| `json_extract(col, '$.path')` | `json_extract(col, '$.path')` | Verify JSON path syntax matches engine |
-| `CAST(x AS VARCHAR)` | `CAST(x AS VARCHAR)` | Check `VARCHAR` vs `VARCHAR(n)` — Trino may require length |
-| `element_at(arr, idx)` | `element_at(arr, idx)` | Trino uses 1-based indexing; verify |
-| `date_diff('day', a, b)` | `date_diff('day', a, b)` | Check argument order (some engines swap start/end) |
-| `approx_distinct(col)` | `approx_distinct(col)` | Precision parameter may differ |
+- `parse_datetime(...)` — Trino-only. Fails on Athena v2 with "function not registered".
+- `date_parse(x, fmt)` — format-code semantics diverge; verify the format string against the engine in use.
+- `from_unixtime(ts)` — return type can be `timestamp` vs `varchar` depending on engine/version.
+- `element_at(arr, idx)` — 1-based on Trino; 0-based indexing assumptions fail silently.
+- `date_diff('unit', a, b)` — argument order differs across engines (start/end swapped in some versions).
+- `CAST(x AS VARCHAR)` — Trino may require an explicit length `VARCHAR(n)` in some contexts.
+- `approx_distinct(col, e)` — precision parameter `e` has different valid ranges.
+- `json_extract(col, '$.path')` — path syntax is mostly shared but stricter on Trino (no `..` descent).
 
-**Red flag**: Any `parse_datetime` call — this is Trino-only, will fail on Athena v2.
+When you flag one, check `dbt_project.yml` or the table profile to confirm which engine the model runs on, then propose the engine-appropriate form.
 
 ## 2. NULL Handling Gaps
 
