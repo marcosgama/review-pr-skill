@@ -17,8 +17,8 @@ The PR to review is: `$ARGUMENTS`
 
 Load these only when you reach the step that needs them — they are one level deep from this file.
 
-- [pipeline-layers.md](pipeline-layers.md) — classification rules for each file (Step 1.4)
-- [bug-patterns.md](bug-patterns.md) — bug pattern catalog to scan for (Step 5)
+- [pipeline-layers.md](pipeline-layers.md) — classification rules for each file (Step 3)
+- [bug-patterns.md](bug-patterns.md) — bug pattern catalog to scan for (Step 7)
 
 ## Review checklist
 
@@ -27,14 +27,16 @@ Copy this checklist into your response before starting Step 1, and check off eac
 ```
 Review Progress:
 - [ ] Pre-flight: gh auth OK, PR exists, has changed files
-- [ ] Step 1: Fetch PR, read every changed file in full, classify by layer
-- [ ] Step 2: Trace upstream — verify column consistency against sources
-- [ ] Step 3: Trace downstream — enumerate every ref() consumer
-- [ ] Step 4: Cross-reference snapshots, schema.yml, Glue, tests, DAGs
-- [ ] Step 5: Scan for bug patterns (bug-patterns.md)
-- [ ] Step 6: Assess PR description completeness
+- [ ] Step 1: Understand the PR — theme, intent, developer's approach
+- [ ] Step 2: Load repo conventions (root + nested CLAUDE.md, CONTRIBUTING.md)
+- [ ] Step 3: Read every changed file in full, classify by layer, identify change type
+- [ ] Step 4: Trace upstream — verify column consistency against sources
+- [ ] Step 5: Trace downstream — enumerate every ref() consumer
+- [ ] Step 6: Cross-reference snapshots, schema.yml, Glue, tests, DAGs
+- [ ] Step 7: Quality scan — style/conventions, Glue complexity, Airflow practices, bug patterns
+- [ ] Step 8: Assess PR description completeness vs what you found
 - [ ] Output: Render the review in the format below
-- [ ] Step 7: Ask the user whether to post the review as a PR comment
+- [ ] Step 9: Ask the user whether to post the review as a PR comment
 ```
 
 ## Pre-Flight Checks
@@ -45,24 +47,47 @@ Validate the environment before doing anything else. If any check fails, stop an
 2. `gh pr view $ARGUMENTS --json number,title,state` — if it fails, the PR URL/number is invalid.
 3. `gh pr view $ARGUMENTS --json files` — if zero changed files, report "No code changes to review".
 
-## Step 1: Fetch and Understand the PR
+## Step 1: Understand the PR
 
-Fetch PR metadata and read all changed files:
+**Start here, before touching any code.** A PR is almost always about a single theme (e.g. "Hubspot — add contact sync", "fix orders null-handling"). Grasping the theme and how the developer approached it shapes every downstream finding.
 
 1. Run `gh pr view $ARGUMENTS --json number,title,body,author,commits,files,additions,deletions,baseRefName,headRefName`.
-2. Run `gh pr diff $ARGUMENTS` for the complete diff.
-3. For **every** changed file, read the full file with the Read tool. Diff hunks miss surrounding context.
-4. Classify each file using the rules in [pipeline-layers.md](pipeline-layers.md). Record the layer per file.
-5. Identify the change type for each file:
-   - **Schema change**: Column additions, removals, renames, type changes
-   - **New model**: File didn't exist before
-   - **Bug fix**: Fixes logic errors, null handling, type casting
-   - **Refactor**: Structural changes without behavior change
-   - **Config change**: dbt project config, source definitions, test definitions
+2. Read the **title** and **description** carefully. Also skim the commit messages — the commit history often reveals the thought process the description omits.
+3. Write down, in your own words:
+   - **Theme** — one sentence. "This PR is about X."
+   - **Intent** — what outcome the author is after (new capability, fix, cleanup, migration, etc.).
+   - **Approach** — the strategy you can infer from the title/body/commits (e.g. "add a new staging model and wire it into the existing hubspot mart").
+   - **Open questions** — anything the description leaves ambiguous that you'll need to answer by reading the code.
+4. Keep this framing visible through the rest of the review — every finding should be evaluated against whether it helps or hurts the stated intent.
 
-**For files classified as "Other"** (docs, CI, tooling): Review for general quality but skip pipeline-specific tracing steps below.
+If the description is empty or misleading, note it now; Step 8 will give concrete suggestions.
 
-## Step 2: Trace Upstream
+## Step 2: Load Repo Conventions
+
+The repo's own conventions are the primary review rubric. Load them **before** critiquing style or patterns.
+
+1. Read the root `CLAUDE.md` if it exists.
+2. Read `CONTRIBUTING.md` if it exists.
+3. For each directory touched by the PR, check for a nested `CLAUDE.md` (e.g. `models/staging/CLAUDE.md`, `dags/CLAUDE.md`). Use Glob: `**/CLAUDE.md`.
+4. Record the conventions that apply to the files in this PR. Treat any departure from them as a first-class finding in Step 7, and cite the source (`CLAUDE.md:line` or the sibling file that establishes the precedent).
+
+If none of these files exist, fall back to the nearest existing sibling of each changed file as the implicit style reference.
+
+## Step 3: Read and Classify Changed Files
+
+1. Run `gh pr diff $ARGUMENTS` for the complete diff.
+2. For **every** changed file, read the full file with the Read tool. Diff hunks miss surrounding context.
+3. Classify each file using the rules in [pipeline-layers.md](pipeline-layers.md). Record the layer per file.
+4. Identify the change type for each file:
+   - **Schema change** — column additions, removals, renames, type changes
+   - **New model** — file didn't exist before
+   - **Bug fix** — fixes logic errors, null handling, type casting
+   - **Refactor** — structural changes without behavior change
+   - **Config change** — dbt project config, source definitions, test definitions
+
+**For files classified as "Other"** (docs, CI, tooling): review for general quality but skip pipeline-specific tracing steps below.
+
+## Step 4: Trace Upstream
 
 For each changed dbt model (base, staging, intermediate, refined, mart):
 
@@ -78,7 +103,7 @@ For each changed dbt model (base, staging, intermediate, refined, mart):
    - Data types are compatible
    - No references to columns that don't exist upstream
 
-## Step 3: Trace Downstream
+## Step 5: Trace Downstream
 
 For each changed model, find every consumer:
 
@@ -96,7 +121,7 @@ For each changed model, find every consumer:
    - Which columns are at risk
    - Whether it will break (hard failure) or silently produce wrong data (soft failure)
 
-## Step 4: Cross-Reference Consistency
+## Step 6: Cross-Reference Consistency
 
 Check these cross-cutting concerns:
 
@@ -124,33 +149,31 @@ Check these cross-cutting concerns:
 - If models were added or removed, check that DAG task dependencies reflect the data flow
 - A model that `ref()`s another must have its Airflow task depend on that model's task
 
-## Step 5: Find Bugs
+## Step 7: Quality Scan
 
-Scan all changed files for the bug patterns defined in [bug-patterns.md](bug-patterns.md). For each pattern found:
+Scan every changed file against [bug-patterns.md](bug-patterns.md). For each finding: exact `file:line`, the code, why it's a problem, a concrete fix.
 
-1. Show the exact code at `file:line`
-2. Explain why it's a problem
-3. Provide a concrete suggested fix
+**Lead with repo-specific concerns, in this order**:
 
-Focus especially on:
-- SQL function compatibility between Athena v2 and Trino
-- NULL handling gaps (empty string → NULL before casting)
-- Position-dependent INSERT INTO without column lists
-- JSON extraction on polymorphic fields without type guards
-- Schema mismatches between adjacent layers
+1. **Style & convention adherence** (bug-patterns §1) — apply the guides you loaded in Step 2. Cite the source for every violation.
+2. **Glue jobs — happy-path, on-point complexity** (bug-patterns §2). Flag over-engineering (defensive scaffolding, speculative abstractions, retry/caching layers) *and* under-specification (missing fields, skipped coercions). Compare against the nearest sibling Glue job.
+3. **Airflow — follow Airflow best practices** (bug-patterns §3). No hardcoding of dates, credentials, paths, or env-specific values — use Connections, Variables, templated fields. Match DAG patterns already in the repo.
+4. **Pipeline correctness** (bug-patterns §§4–10) — NULL handling, position-dependent INSERTs, JSON type guards, schema mismatches, snapshot check_cols, DAG dependency wiring, Glue↔base field drift.
+5. **Athena v2 vs Trino syntax** — only when the PR is explicitly about engine portability. Not a default focus (see bug-patterns appendix).
 
-## Step 6: Assess PR Description
+## Step 8: Assess PR Description
 
-Read the PR description (from Step 1 metadata). Evaluate whether it covers:
+Now that you know what the PR actually does, compare the description (from Step 1) against the reality you uncovered. Evaluate whether the description covers:
 
-1. **What changed**: Which models/jobs/DAGs were modified and how
-2. **Why**: The business or technical motivation
-3. **Blast radius**: Which downstream models are affected
-4. **Testing approach**: How the changes were validated
+1. **Theme & intent** — does the description state the theme clearly? Does it match what you found?
+2. **What changed** — which models/jobs/DAGs were modified and how.
+3. **Why** — the business or technical motivation.
+4. **Blast radius** — which downstream models are affected (cross-check against Step 5).
+5. **Testing approach** — how the changes were validated.
 
-If the description is thorough, acknowledge it briefly. If it's missing critical context, suggest specific additions — write a draft paragraph the author could add.
+If the description is thorough, acknowledge it briefly. If it's missing critical context, suggest specific additions — write a draft paragraph the author could paste in.
 
-## Step 7: Post as PR Comment (Optional)
+## Step 9: Post as PR Comment (Optional)
 
 After rendering the review in the terminal:
 
@@ -176,6 +199,12 @@ Structure your review output as follows. Every section is required unless explic
 **Changes**: [N files changed], [+additions], [-deletions]
 **Type**: [schema change / new model / bug fix / refactor / mixed]
 **Layers touched**: [list of pipeline layers]
+
+## Theme & Intent
+
+- **Theme**: [one-sentence description of what this PR is about]
+- **Intent**: [the outcome the author is after]
+- **Approach**: [the strategy the author took, as inferred from title/body/commits]
 
 ## Approach
 
