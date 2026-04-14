@@ -180,7 +180,7 @@ Write the rendered review to the Pulse inbox as a self-contained markdown file. 
 
 1. **Determine the target directory**, in priority order:
    - `$PULSE_INBOX` environment variable, if set (check with `[ -n "$PULSE_INBOX" ]`).
-   - `../oneone/data/inbox/` relative to the current repo, if that directory exists (`[ -d "../oneone/data/inbox" ]`).
+   - `~/.pulse/data/inbox/` if that directory exists (`[ -d "$HOME/.pulse/data/inbox" ]`).
    - Otherwise, **skip this step silently** — no Pulse available, no harm done.
 2. **Derive the PR number** from `gh pr view $ARGUMENTS --json number -q .number`.
 3. **Write the file** to `<target-dir>/pr-<number>-<UTC-timestamp>.md` (timestamp format `YYYYMMDDTHHMMSSZ`). Use the Write tool.
