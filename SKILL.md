@@ -4,7 +4,7 @@ description: Deep, repo-aware PR review for clever-datalake-workflows data pipel
 when_to_use: Trigger when the user asks to review, audit, or check a PR in clever-datalake-workflows, or pastes a PR URL/number for review. Example phrases "review PR 280", "check this PR", "look at pull request <url>".
 argument-hint: <PR-URL-or-number>
 disable-model-invocation: true
-allowed-tools: Bash(gh *) Read Grep Glob
+allowed-tools: Bash(gh *) Read Write Grep Glob
 ---
 
 # /review-pr — Deep Pipeline PR Review
@@ -36,7 +36,8 @@ Review Progress:
 - [ ] Step 7: Quality scan — style/conventions, Glue complexity, Airflow practices, bug patterns
 - [ ] Step 8: Assess PR description completeness vs what you found
 - [ ] Output: Render the review in the format below
-- [ ] Step 9: Ask the user whether to post the review as a PR comment
+- [ ] Step 9: Save the review to the Pulse inbox (if available)
+- [ ] Step 10: Ask the user whether to post the review as a PR comment
 ```
 
 ## Pre-Flight Checks
@@ -173,9 +174,40 @@ Now that you know what the PR actually does, compare the description (from Step 
 
 If the description is thorough, acknowledge it briefly. If it's missing critical context, suggest specific additions — write a draft paragraph the author could paste in.
 
-## Step 9: Post as PR Comment (Optional)
+## Step 9: Save Review to Pulse Inbox
 
-After rendering the review in the terminal:
+Write the rendered review to the Pulse inbox as a self-contained markdown file. Pulse ingests this on its own schedule and updates its internal structures; this skill does not talk to Pulse directly. Keep the coupling loose — the file is the interface.
+
+1. **Determine the target directory**, in priority order:
+   - `$PULSE_INBOX` environment variable, if set (check with `[ -n "$PULSE_INBOX" ]`).
+   - `../oneone/data/inbox/` relative to the current repo, if that directory exists (`[ -d "../oneone/data/inbox" ]`).
+   - Otherwise, **skip this step silently** — no Pulse available, no harm done.
+2. **Derive the PR number** from `gh pr view $ARGUMENTS --json number -q .number`.
+3. **Write the file** to `<target-dir>/pr-<number>-<UTC-timestamp>.md` (timestamp format `YYYYMMDDTHHMMSSZ`). Use the Write tool.
+4. The file must begin with YAML frontmatter so Pulse's ingester has structured metadata without re-parsing the PR:
+
+   ```yaml
+   ---
+   pr_url: <full URL from gh pr view>
+   pr_number: <number>
+   pr_title: <title>
+   pr_author: <author login>
+   base_ref: <baseRefName>
+   head_ref: <headRefName>
+   source_repo: <owner/repo from the URL>
+   reviewed_at: <ISO 8601 UTC timestamp, e.g. 2026-04-14T11:30:00Z>
+   reviewer: claude-code/review-pr
+   ---
+   ```
+
+5. After the frontmatter, paste the **full review body** you rendered (everything from "Summary" through "Coaching" in the Output Format section).
+6. Print a one-line confirmation: `Saved review to <full path>`.
+
+Do not overwrite an existing file with the same name — the timestamp prevents collisions. If the user re-reviews the same PR, each review becomes its own file; Pulse can decide how to reconcile them.
+
+## Step 10: Post as PR Comment (Optional)
+
+After rendering the review in the terminal and (if applicable) saving to the Pulse inbox:
 
 1. Ask the user: "Post this review as a PR comment?"
 2. If yes:

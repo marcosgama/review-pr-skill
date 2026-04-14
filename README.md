@@ -14,7 +14,8 @@ When invoked as `/review-pr <PR-URL>`, the skill:
 6. Cross-references schemas, snapshots, tests, and configs
 7. Detects common SQL/pipeline bug patterns
 8. Outputs a structured review with severity-ordered findings
-9. Optionally posts the review as a PR comment
+9. Saves the review to the Pulse inbox (if available) for downstream ingestion
+10. Optionally posts the review as a PR comment
 
 ## Why not just use the PR diff?
 
@@ -65,6 +66,30 @@ Claude Code live-reloads skill changes, so edits to these files take effect in t
 /review-pr 280
 ```
 
+## Pulse integration (loose coupling)
+
+Reviews are written to a Pulse inbox directory as self-contained markdown files. Pulse ingests these on its own schedule and updates its internal data structures — the skill does not call Pulse directly.
+
+**Target directory**, in priority order:
+
+1. `$PULSE_INBOX` environment variable, if set
+2. `../oneone/data/inbox/` relative to the current repo, if it exists
+3. Otherwise the step is skipped silently
+
+**File naming**: `pr-<number>-<UTC-timestamp>.md` (timestamps prevent collisions on re-review).
+
+**File shape**: YAML frontmatter with `pr_url`, `pr_number`, `pr_title`, `pr_author`, `base_ref`, `head_ref`, `source_repo`, `reviewed_at`, `reviewer`, followed by the full rendered review body. Pulse parses this however it wants — the markdown is the interface.
+
+To enable:
+
+```bash
+# Option A: inherit the sibling-dir default (nothing to do if ../oneone exists)
+mkdir -p ../oneone/data/inbox
+
+# Option B: point it somewhere else
+export PULSE_INBOX=/path/to/pulse/inbox
+```
+
 ## Customization
 
 - **pipeline-layers.md** — Edit layer classification rules and glob patterns
@@ -75,6 +100,6 @@ Claude Code live-reloads skill changes, so edits to these files take effect in t
 
 | File | Purpose |
 |------|---------|
-| `SKILL.md` | Main skill — 7-step review orchestration and output template |
+| `SKILL.md` | Main skill — 10-step review orchestration, Pulse handoff, and output template |
 | `pipeline-layers.md` | Layer classification rules for 12 pipeline layer types |
 | `bug-patterns.md` | 8 bug pattern checks with code examples and fixes |
